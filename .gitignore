@@ -1,0 +1,31 @@
+# Data is never committed. Any cached recording downloaded from a public
+# registry stays local; see README for the cache location and how to change it.
+data/
+cache/
+*.npz
+*.vital
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
