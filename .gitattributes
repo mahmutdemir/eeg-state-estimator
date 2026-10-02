@@ -1,0 +1,7 @@
+# Normalise line endings. The repository is developed on Windows and tested on
+# Linux in CI; without this, checkouts differ and `ruff format --check` can
+# disagree between the two.
+* text=auto eol=lf
+
+*.png binary
+*.npz binary
