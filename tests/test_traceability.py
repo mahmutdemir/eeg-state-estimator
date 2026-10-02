@@ -31,7 +31,7 @@ def markers() -> dict[str, list[str]]:
 # --------------------------------------------------------------------------- REQ-030
 
 
-@pytest.mark.req("REQ-030")
+@pytest.mark.req("REQ-040")
 def test_every_requirement_has_at_least_one_test(
     requirement_ids: list[str], markers: dict[str, list[str]]
 ) -> None:
@@ -42,7 +42,7 @@ def test_every_requirement_has_at_least_one_test(
     )
 
 
-@pytest.mark.req("REQ-030")
+@pytest.mark.req("REQ-040")
 def test_no_test_claims_an_undeclared_requirement(
     requirement_ids: list[str], markers: dict[str, list[str]]
 ) -> None:
@@ -54,7 +54,7 @@ def test_no_test_claims_an_undeclared_requirement(
     )
 
 
-@pytest.mark.req("REQ-030")
+@pytest.mark.req("REQ-040")
 def test_requirements_file_declares_unique_ids(requirement_ids: list[str]) -> None:
     duplicates = sorted({r for r in requirement_ids if requirement_ids.count(r) > 1})
     assert not duplicates, f"duplicate requirement IDs in requirements.md: {duplicates}"
@@ -63,7 +63,7 @@ def test_requirements_file_declares_unique_ids(requirement_ids: list[str]) -> No
 # --------------------------------------------------------------------------- REQ-031
 
 
-@pytest.mark.req("REQ-031")
+@pytest.mark.req("REQ-041")
 def test_parse_requirement_ids_reads_table_rows_only() -> None:
     """IDs mentioned in prose must not be mistaken for declarations.
 
@@ -80,7 +80,7 @@ def test_parse_requirement_ids_reads_table_rows_only() -> None:
     assert parse_requirement_ids(document) == ["REQ-001", "REQ-002"]
 
 
-@pytest.mark.req("REQ-031")
+@pytest.mark.req("REQ-041")
 def test_scan_req_markers_finds_decorators(tmp_path: Path) -> None:
     (tmp_path / "test_example.py").write_text(
         "import pytest\n"
@@ -110,7 +110,7 @@ def test_scan_req_markers_finds_decorators(tmp_path: Path) -> None:
     }
 
 
-@pytest.mark.req("REQ-031")
+@pytest.mark.req("REQ-041")
 def test_scan_req_markers_ignores_string_literals(tmp_path: Path) -> None:
     """A marker mentioned inside a string must not count as coverage.
 
@@ -137,7 +137,7 @@ def test_scan_req_markers_ignores_string_literals(tmp_path: Path) -> None:
     assert scan_req_markers(tmp_path) == {"REQ-010": ["test_fixture_holder.py"]}
 
 
-@pytest.mark.req("REQ-031")
+@pytest.mark.req("REQ-041")
 def test_render_matrix_marks_untested_requirements() -> None:
     matrix = render_matrix(
         ["REQ-001", "REQ-002"],
@@ -148,7 +148,7 @@ def test_render_matrix_marks_untested_requirements() -> None:
     assert "| REQ-002 | **NONE** | 0 |" in matrix
 
 
-@pytest.mark.req("REQ-031")
+@pytest.mark.req("REQ-041")
 def test_render_matrix_reports_undeclared_ids() -> None:
     matrix = render_matrix(["REQ-001"], {"REQ-001": ["a.py"], "REQ-404": ["b.py"]})
     assert "Markers referencing undeclared requirements" in matrix

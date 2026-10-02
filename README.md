@@ -108,9 +108,13 @@ might otherwise flag as mistakes:
 - **The peak PSD bin is not the signal power.** Multitaper deliberately spreads a spectral line
   over the analysis bandwidth `W = NW/T`. Recovering a sinusoid's power means *integrating* over
   that bandwidth; reading the peak bin overestimates it. The test integrates.
-- **Peak frequency uses plain `argmax`, with no sub-bin interpolation.** At the configured
-  resolution the worst-case error is half a bin, which is provably inside the ±0.25 Hz
-  requirement. Interpolation would add code and defend nothing.
+- **Peak frequency is a power-weighted centroid, not the `argmax` bin.** Averaging `K`
+  concentrated tapers turns a spectral line into a flat-topped plateau of width `2W`, so the
+  argmax is pinned by taper ripple rather than by the true frequency — its error is bounded by
+  `W`, not by the bin width, and zero-padding does not help. Measured argmax error at a 4-second
+  record is 0.32 Hz, which fails the ±0.25 Hz requirement outright. The plateau is symmetric
+  about the true frequency, so its first moment is correct where its maximum is not: the centroid
+  gives 0.0096 Hz.
 - **NEES is a simulation-only diagnostic.** It needs the true state. On real data the analogue is
   NIS, which is built only from the innovation and its variance. The two are separate functions so
   that the distinction is impossible to miss.
