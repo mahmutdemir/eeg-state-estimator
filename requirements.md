@@ -81,6 +81,25 @@ deliberately out of scope.
 > a suite of `assert True`. Each diagnostic is therefore pointed at a deliberately broken filter and
 > asserted to fail.
 
+## Streaming
+
+| ID | Requirement | Acceptance criterion | Measured margin |
+|---|---|---|---|
+| REQ-050 | The library shall provide a streaming estimator interface. | An abstract base class declaring `update(chunk)`, `reset()` and `state_nbytes`. The Kalman filter and the composed pipeline both satisfy it without adaptation. | n/a — API contract |
+| REQ-051 | Chunked streaming output shall equal whole-record batch output. | Feeding a record in arbitrary chunk sizes produces output identical to feeding it in one call, within `rtol = 1e-9`. | **Bitwise identical** — there is one implementation, not two |
+| REQ-052 | The causal path shall contain no look-ahead. | The output at epoch `t` is unchanged when arbitrary future samples are appended to the record. | **Bitwise identical** |
+| REQ-053 | Outputs produced before the estimator has converged shall be flagged, never emitted as valid values. | Each output carries an explicit validity flag and a status. Warm-up is defined by the posterior variance still exceeding the Riccati fixed point by more than a stated tolerance — a self-calibrating criterion rather than a fixed epoch count. | n/a — behavioural |
+| REQ-054 | Retained internal state shall be constant in the length of the record. | `state_nbytes` after processing 10⁶ samples equals its value after 10³. | Exact |
+| REQ-055 | The pipeline shall compose preprocessing, spectral estimation and recursive filtering into one streaming estimator. | A single `update(chunk)` call takes raw samples and returns per-epoch state estimates with credible intervals. | n/a — behavioural |
+
+> **Why REQ-051 and REQ-052 come out bitwise identical rather than merely within tolerance.**
+> `filter_series` and the pipeline's batch path contain no arithmetic of their own — both
+> construct the estimator and call `update()`. With a single implementation there is no
+> second code path to drift, so the requirement's `1e-9` tolerance is never approached. The
+> tolerance is retained in the requirement because it is the honest bound to promise for a
+> floating-point pipeline; meeting it exactly is a property of this design, not a guarantee
+> of the specification.
+
 ## Verification infrastructure
 
 | ID | Requirement | Acceptance criterion | Measured margin |
