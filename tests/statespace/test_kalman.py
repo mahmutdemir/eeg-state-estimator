@@ -92,12 +92,16 @@ def test_posterior_variance_stays_positive_under_a_diffuse_prior() -> None:
     floating-point cancellation, and at larger P0 it can go negative. The implementation
     uses P * R / S, which is the same algebra with no subtraction in it.
     """
-    model = RandomWalkModel(0.0, 2.0)
+    r = 2.0
+    model = RandomWalkModel(0.0, r)
     for initial_variance in (1.0e6, 1.0e12, 1.0e16, 1.0e20):
         filt = ScalarKalmanFilter(model, initial_mean=0.0, initial_variance=initial_variance)
         step = filt.step(1.0)
+        # Exact closed form. Note this is not quite R: it approaches R only as P0 -> inf,
+        # so comparing against the limit would conflate a real difference with an error.
+        exact = initial_variance * r / (initial_variance + r)
         assert step.variance > 0.0
-        assert np.isclose(step.variance, 2.0, rtol=1e-9), f"P0={initial_variance:g}"
+        assert np.isclose(step.variance, exact, rtol=1e-12), f"P0={initial_variance:g}"
 
 
 @pytest.mark.req("REQ-030")

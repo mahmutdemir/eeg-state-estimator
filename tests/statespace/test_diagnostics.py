@@ -25,7 +25,6 @@ from eeg_state_estimator.statespace.diagnostics import (
     normalized_innovation_squared,
 )
 
-
 # --------------------------------------------------------------------------- bounds
 
 
