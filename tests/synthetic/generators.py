@@ -240,7 +240,7 @@ def burst_suppression(
     del sample_rate
 
     rng = np.random.default_rng(seed)
-    n_suppressed = int(round(suppression_fraction * n_samples))
+    n_suppressed = round(suppression_fraction * n_samples)
     n_bursting = n_samples - n_suppressed
 
     suppressed_lengths = _integer_partition(n_suppressed, n_episodes)
