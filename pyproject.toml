@@ -42,7 +42,7 @@ packages = ["src/eeg_state_estimator"]
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 markers = [
     "req(id): the requirement in requirements.md that this test verifies",
 ]

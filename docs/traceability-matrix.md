@@ -2,12 +2,12 @@
 
 Generated from `@pytest.mark.req(...)` markers in the test tree. Do not edit by hand.
 
-**2 of 23 requirements have at least one test.**
+**3 of 23 requirements have at least one test.**
 
 | Requirement | Verified by | Tests |
 |---|---|---|
 | REQ-001 | **NONE** | 0 |
-| REQ-002 | **NONE** | 0 |
+| REQ-002 | `synthetic/test_generators.py` | 1 |
 | REQ-010 | **NONE** | 0 |
 | REQ-011 | **NONE** | 0 |
 | REQ-012 | **NONE** | 0 |
