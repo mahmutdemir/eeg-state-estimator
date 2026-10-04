@@ -2,23 +2,23 @@
 
 Generated from `@pytest.mark.req(...)` markers in the test tree. Do not edit by hand.
 
-**3 of 23 requirements have at least one test.**
+**15 of 23 requirements have at least one test.**
 
 | Requirement | Verified by | Tests |
 |---|---|---|
-| REQ-001 | **NONE** | 0 |
-| REQ-002 | `synthetic/test_generators.py` | 1 |
-| REQ-010 | **NONE** | 0 |
-| REQ-011 | **NONE** | 0 |
-| REQ-012 | **NONE** | 0 |
-| REQ-013 | **NONE** | 0 |
-| REQ-014 | **NONE** | 0 |
-| REQ-015 | **NONE** | 0 |
-| REQ-016 | **NONE** | 0 |
-| REQ-017 | **NONE** | 0 |
-| REQ-018 | **NONE** | 0 |
-| REQ-019 | **NONE** | 0 |
-| REQ-020 | **NONE** | 0 |
+| REQ-001 | `spectral/test_spectral.py` | 1 |
+| REQ-002 | `spectral/test_spectral.py`, `synthetic/test_generators.py` | 2 |
+| REQ-010 | `spectral/test_spectral.py` | 1 |
+| REQ-011 | `spectral/test_spectral.py` | 1 |
+| REQ-012 | `spectral/test_spectral.py` | 1 |
+| REQ-013 | `spectral/test_spectral.py` | 1 |
+| REQ-014 | `spectral/test_spectral.py` | 1 |
+| REQ-015 | `spectral/test_spectral.py` | 1 |
+| REQ-016 | `spectral/test_spectral.py` | 1 |
+| REQ-017 | `spectral/test_spectral.py` | 1 |
+| REQ-018 | `spectral/test_spectral.py` | 1 |
+| REQ-019 | `spectral/test_spectral.py` | 1 |
+| REQ-020 | `spectral/test_spectral.py` | 1 |
 | REQ-030 | **NONE** | 0 |
 | REQ-031 | **NONE** | 0 |
 | REQ-032 | **NONE** | 0 |
