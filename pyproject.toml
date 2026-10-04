@@ -97,3 +97,12 @@ warn_unused_ignores = true
 warn_return_any = true
 strict_equality = true
 pretty = true
+
+# SciPy ships no type information. Two options: add scipy-stubs as a dev dependency, or
+# silence the import here. The override is one block, it cannot drift out of sync with
+# the installed scipy version, and it is honest about the situation. The resulting Any is
+# confined to a single adapter (`dpss_tapers`), which coerces to a typed array before
+# returning, so it never escapes into the rest of the package.
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
+ignore_missing_imports = true

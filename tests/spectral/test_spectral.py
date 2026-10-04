@@ -12,6 +12,8 @@ algorithm separately from the estimator gives two precise tests instead of one v
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -21,8 +23,8 @@ from eeg_state_estimator.spectral import (
     band_power,
     band_powers,
     dpss_tapers,
-    fit_power_law,
     find_peak,
+    fit_power_law,
     multitaper_psd,
     spectral_edge_frequency,
     total_power,
@@ -37,9 +39,14 @@ from synthetic.generators import (
 FS = DEFAULT_SAMPLE_RATE
 
 
-def _flat_spectrum(low: float, high: float, level: float = 1.0, n_bins: int = 512) -> Spectrum:
+def _grid() -> np.ndarray:
+    """A frequency grid landing exactly on integer hertz, so band edges are grid points."""
+    return np.arange(0.0, FS / 2.0 + 1e-9, 0.125)
+
+
+def _flat_spectrum(low: float, high: float, level: float = 1.0) -> Spectrum:
     """A PSD array built by hand, so the correct answers are exact."""
-    frequencies = np.linspace(0.0, FS / 2.0, n_bins)
+    frequencies = _grid()
     psd = np.where((frequencies >= low) & (frequencies <= high), level, 0.0)
     return Spectrum(
         frequencies=frequencies,
@@ -209,8 +216,16 @@ def test_find_peak_returns_none_when_there_is_no_peak() -> None:
     Reporting it as None rather than raising, or than returning a meaningless number, is
     the same principle as making "no valid signal" a distinct output state.
     """
-    spectrum = multitaper_psd(white_noise(n_samples=1024, sample_rate=FS, seed=0), sample_rate=FS)
-    assert find_peak(spectrum, search_low=20.0, search_high=20.5) is None
+    frequencies = _grid()
+    monotone = 1.0 / (1.0 + frequencies)
+    spectrum = Spectrum(
+        frequencies=frequencies,
+        psd=np.asarray(monotone, dtype=np.float64),
+        sample_rate=FS,
+        half_bandwidth=1.0,
+        n_tapers=7,
+    )
+    assert find_peak(spectrum, search_low=10.0, search_high=20.0) is None
 
 
 # --------------------------------------------------------------------------- REQ-015
@@ -294,7 +309,7 @@ def test_spectral_edge_is_non_decreasing_in_the_fraction() -> None:
         power_law_noise(n_samples=int(8 * FS), sample_rate=FS, exponent=1.5, seed=0), sample_rate=FS
     )
     edges = [spectral_edge_frequency(spectrum, fraction=f) for f in (0.5, 0.7, 0.9, 0.95, 0.99)]
-    assert all(b >= a for a, b in zip(edges, edges[1:], strict=False))
+    assert all(b >= a for a, b in itertools.pairwise(edges))
 
 
 @pytest.mark.req("REQ-018")
