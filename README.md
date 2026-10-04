@@ -53,7 +53,9 @@ test-first looks like when it is not reconstructed afterwards.
 Built in tiers, each one finished before the next begins.
 
 - [x] **Tier 0** — scaffold, requirements, traceability generator, CI
-- [ ] **Tier 1** — synthetic generators, multitaper spectral core, scalar Kalman filter with the consistency battery, documentation
+- [x] **Tier 1** — synthetic generators, multitaper spectral core, scalar Kalman filter with the consistency battery, documentation
+
+**112 tests, 23 of 23 requirements verified**, ruff and mypy clean.
 - [ ] **Tier 2** — streaming interface, online/offline equivalence, strict causality
 - [ ] **Tier 3** — one of: artifact robustness, burst suppression, public-data demonstration
 
@@ -74,6 +76,29 @@ pytest -q          # full suite; regenerates the traceability matrix
 ruff check .       # lint
 mypy               # type-check
 ```
+
+## Usage
+
+```python
+import numpy as np
+from eeg_state_estimator.spectral import multitaper_psd, find_peak, band_powers
+from eeg_state_estimator.statespace import RandomWalkModel, filter_series
+
+# A spectral feature per epoch, from the raw trace.
+spectrum = multitaper_psd(epoch, sample_rate=128.0)
+peak = find_peak(spectrum, search_low=8.0, search_high=12.0)   # None if there is no peak
+powers = band_powers(spectrum)                                  # slow_delta, theta, alpha, beta
+
+# Track one of those features over time, with an uncertainty on every estimate.
+model = RandomWalkModel(process_variance=0.05, observation_variance=1.0)
+track = filter_series(np.log(alpha_power_per_epoch), model)
+lower, upper = track.credible_interval(0.95)
+```
+
+The second half is the point of the package. `track.variance` is a posterior variance, so
+the estimator reports how confident it is — and `track.innovation` with
+`track.innovation_variance` lets a caller check, on data with no ground truth, whether that
+confidence is justified.
 
 ---
 

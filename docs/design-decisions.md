@@ -212,3 +212,111 @@ give unit energy for the multi-taper call, but the normalization is a parameter 
 different choice (`'approximate'`, which normalizes to unit *peak*) would scale every PSD by
 roughly `N/4` with no error and no warning. Making the assumption explicit at the call site, and
 asserting it in a test, converts a silent dependency into a checked one.
+
+---
+
+## Tier 1 — implementation
+
+### The posterior variance is `P · R / S`, not `(1 − K·C) · P`
+
+**Decision.** `ScalarKalmanFilter.step` computes `posterior_variance = prior_variance * R / S`.
+
+**Why.** The two are algebraically identical: substituting `K = P·C/S` into the Joseph form
+`(1 − K·C)²·P + K²·R` and simplifying gives exactly `P·R/S`. But the conventional form
+constructs `1 − K·C` as a *difference*, and `K → 1` is precisely what a diffuse prior
+produces. Measured against the exact value with `R = 2`:
+
+| `P₀` | naive `(1 − K)·P` | `P·R/S` | exact |
+|---|---|---|---|
+| 1e6 | 1.9999960000 | 1.9999960000 | 1.9999960000 |
+| 1e12 | 1.9999557566 | 2.0000000000 | 2.0000000000 |
+| 1e16 | **2.2204460493** | 2.0000000000 | 2.0000000000 |
+| 1e20 | **0.0000000000** | 2.0000000000 | 2.0000000000 |
+
+At `P₀ = 1e16` the naive form is 11% high. At 1e20 it returns **exactly zero** — a filter
+asserting infinite certainty, after which the Kalman gain is zero forever and the estimator
+never listens to data again. That is not a precision nuisance; it is a silent, permanent
+failure mode reachable from an ordinary diffuse initialisation.
+
+The chosen form is a quotient of strictly positive quantities. It cannot cancel, and it
+cannot return a negative variance under any rounding.
+
+**Rejected.** The naive form (above). The explicit Joseph form — bit-identical here, but in
+the scalar case it is three operations where one will do, and `P·R/S` *is* the Joseph form
+collapsed. The vector generalisation is then the standard Joseph form for the same reason,
+so nothing about this implementation has to be unlearned.
+
+### Analysis functions take a `Spectrum`, not a signal
+
+**Decision.** Only `multitaper_psd` consumes a signal. `band_power`,
+`spectral_edge_frequency`, `find_peak` and `fit_power_law` all take a `Spectrum`.
+
+**Why.** It makes them testable against exact answers. The spectral edge of a flat PSD is
+`low + fraction·(high − low)` exactly; the spectral edge of an *estimated* white-noise
+spectrum has about 1.5 Hz of seed-to-seed scatter, which is roughly 15× the difference
+between the three plausible SEF conventions. Coupling the two would mean a test that
+measures the seed. Separated, the algorithm gets a precise test and the estimator gets a
+loose integration test, which is two useful tests instead of one vague one.
+
+**Rejected.** A convenience API taking `(signal, sample_rate)` throughout. It reads better
+in a single call and makes every downstream function untestable except through the estimator.
+
+### `find_peak` returns `None` rather than raising or guessing
+
+**Decision.** No interior local maximum in the search range returns `None`.
+
+**Why.** The absence of a spectral peak is a real state, not an error and not a number.
+Deep anesthetic suppression has no alpha peak. Raising would make a normal physiological
+condition an exception; returning the argmax anyway would return a confident meaningless
+frequency. This is the same principle as making "no valid signal" a distinct output state
+rather than a value on the measurement scale.
+
+### Ljung–Box is implemented directly rather than adding a statistics dependency
+
+**Decision.** Eleven lines in `diagnostics.py`, instead of `statsmodels`.
+
+**Why.** It is one statistic, the formula is short, and the runtime dependency surface stays
+at numpy and scipy — which matters for anything that would eventually ship. It also forces
+the `n_fitted_parameters` question to be answered explicitly: it is **0** here, because `Q`
+and `R` are given rather than estimated from the data, so no degrees of freedom are consumed.
+Passing a non-zero `p` when nothing was fitted is the most common error in applying this
+test, and a library call makes it easy to get wrong without noticing.
+
+### The per-sample kernel is `step()` and the chunk method is `update()`
+
+**Decision.** Both exist from the start, with `update()` looping `step()`.
+
+**Why.** A streaming interface's method is `update(chunk)`. Had `update` meant "one scalar"
+here, adding streaming later would either break this API and its tests or leave `update`
+meaning two different things in the same hierarchy. Five lines now avoids both.
+
+`filter_series` constructs a filter and calls `update()` once, containing **no filtering
+arithmetic of its own**. That single-implementation property is what makes a later
+online/offline equivalence check trivially true rather than something to chase, and it means
+the batch path cannot drift from the streaming path.
+
+### `state_nbytes` is computed from a declared tuple, not by introspection
+
+**Decision.** `len(_STATE_FIELDS) * 8`.
+
+**Why.** `sys.getsizeof` reports CPython object overhead — 24 bytes for a bare float — which
+is both misleading and unstable across interpreter versions. The property exists to express
+the bounded-memory property, so it reports the numerical state carried between updates and
+says so.
+
+### The simulation-only diagnostics are 2-D with a required `time_index`
+
+**Decision.** `nees_across_runs` and `credible_interval_coverage` take
+`(n_runs, n_samples)` arrays and a keyword-only `time_index` with no default; `truth` is
+their first positional parameter.
+
+**Why.** The aggregation rule is the thing that is easy to get wrong, so the type signature
+enforces it rather than a docstring requesting it. It is not possible to pass a single run,
+and not possible to average over time by accident. Putting `truth` first with no default
+means neither function can be reached without ground truth in hand — which is the property
+that makes "simulation only" structural rather than advisory.
+
+**Rejected.** Splitting into `diagnostics.py` and `simulation_diagnostics.py` so the
+distinction appears in the import line. Arguably stronger, and worth revisiting, but at this
+scope the naming convention plus the module-docstring table carries it without doubling the
+module count.
