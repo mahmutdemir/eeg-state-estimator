@@ -55,8 +55,8 @@ Built in tiers, each one finished before the next begins.
 - [x] **Tier 0** — scaffold, requirements, traceability generator, CI
 - [x] **Tier 1** — synthetic generators, multitaper spectral core, scalar Kalman filter with the consistency battery, documentation
 
-**112 tests, 23 of 23 requirements verified**, ruff and mypy clean.
-- [ ] **Tier 2** — streaming interface, online/offline equivalence, strict causality
+**132 tests, 29 of 29 requirements verified**, ruff and mypy clean.
+- [x] **Tier 2** — streaming interface, online/offline equivalence, strict causality
 - [ ] **Tier 3** — one of: artifact robustness, burst suppression, public-data demonstration
 
 ---

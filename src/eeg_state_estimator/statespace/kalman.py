@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from eeg_state_estimator.base import StreamingEstimator
 from eeg_state_estimator.types import FloatArray
 
 
@@ -147,12 +148,16 @@ class KalmanTrack:
         return lower, upper
 
 
-class ScalarKalmanFilter:
+class ScalarKalmanFilter(StreamingEstimator[KalmanTrack]):
     """A stateful scalar Kalman filter.
 
     State is genuinely carried between calls — the posterior mean and variance — so this
     is a class rather than a function. `step()` consumes one observation; `update()`
     consumes a chunk and returns a `KalmanTrack`.
+
+    It satisfies `StreamingEstimator` without adaptation, which is the point of having
+    named the kernel `step()` and the chunk method `update()` from the beginning rather
+    than renaming an established API once streaming arrived.
     """
 
     #: The numerical state carried between updates. Declared rather than introspected so

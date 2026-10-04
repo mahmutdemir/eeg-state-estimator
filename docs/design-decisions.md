@@ -320,3 +320,88 @@ that makes "simulation only" structural rather than advisory.
 distinction appears in the import line. Arguably stronger, and worth revisiting, but at this
 scope the naming convention plus the module-docstring table carries it without doubling the
 module count.
+
+---
+
+## Tier 2 — streaming
+
+### There is no band-pass filter in the pipeline
+
+**Decision.** Preprocessing is the mean removal inside the spectral estimate. Nothing else.
+
+**Why.** The obvious addition is a 0.5–45 Hz band-pass, and the obvious way to apply one
+offline is zero-phase — filter forwards, then backwards — because it has no group delay.
+**That is look-ahead.** The backward pass makes every output depend on later samples, which
+would break strict causality (REQ-052) while looking entirely innocent in review: the code
+is one library call and the resulting signal looks better.
+
+A causal IIR filter would be legitimate, but it introduces a frequency-dependent group
+delay that would then have to be characterised, reported alongside every estimate, and
+accounted for in any comparison against another monitor's time base. That is real work, and
+nothing being estimated here needs it — the multitaper estimate already restricts attention
+to a band, and the mean removal handles the one artifact (DC leakage) that measurably
+affects the results.
+
+**Rejected.** Zero-phase filtering (look-ahead). A causal IIR band-pass (unnecessary group
+delay for no benefit here). This is the clearest case in the repository of a hard rule
+deciding a design question, so it is worth being able to state directly: *the filter that
+looks best offline is the one that is forbidden online.*
+
+### Epochs are non-overlapping
+
+**Decision.** Each epoch consumes its samples and the buffer is drained.
+
+**Why.** Overlapping windows are the conventional choice on a clinical monitor — they raise
+the output rate without shortening the analysis window, so a 2-second window can still emit
+once per second. The buffering here extends to them naturally.
+
+They are not implemented because nothing in the requirements needs them, and a small
+finished component is the goal. More usefully: draining the buffer as epochs complete is
+*what makes causality structural rather than merely tested*. Once an epoch is emitted, the
+samples it was computed from are gone, so there is no mechanism by which a later chunk
+could revise it. The property is enforced by the data structure, not by discipline.
+
+### The tracked quantity is log band power
+
+**Decision.** The filter observes `log(band_power)`, not `band_power`.
+
+**Why.** Band power is strictly positive and varies multiplicatively. A Gaussian random walk
+on the raw power puts a symmetric prior on a positive quantity, which produces credible
+intervals extending below zero — an estimator reporting a 95% interval that includes
+physically impossible values is not one anybody should act on. On the log scale the
+random-walk model is defensible and the interval, transformed back, is asymmetric and
+positive.
+
+A zero-power epoch has no logarithm, so the power is clamped at a small floor. That keeps
+the filter running across a dropout instead of taking a NaN into its state, which would
+never wash out.
+
+### Warm-up is defined by the posterior variance, not by an epoch count
+
+**Decision.** An estimate is valid once `P <= P_steady_state * (1 + tolerance)`.
+
+**Why.** The variance recursion does not involve the data at all, so whether the filter has
+converged is answerable from the model alone, in advance. That makes the criterion
+self-calibrating: change `Q` or `R` and the warm-up length adapts. A hand-picked "invalid
+for the first 10 epochs" would silently become wrong the first time anybody retuned the
+model, and nothing would fail to indicate it.
+
+Because the variance decreases monotonically to its fixed point from a diffuse prior,
+validity latches: a valid estimate is never followed by an invalid one. That is asserted as
+a test rather than left as an implementation detail, since a flickering validity flag would
+be worse than none.
+
+**Note what warm-up is not.** The estimate is flagged, not suppressed. Its numbers are
+present and finite. A caller may legitimately want to display the warm-up; what it must not
+do is mistake it for a converged estimate, and that is exactly what the flag prevents.
+
+### `StreamingEstimator` is generic in its output type
+
+**Decision.** `StreamingEstimator[OutputT]`, with the filter returning `KalmanTrack` and the
+pipeline returning `list[EpochEstimate]`.
+
+**Why.** The two implementations genuinely return different things. Flattening them into a
+common supertype would lose type information at every call site in exchange for a uniformity
+nobody needs. `state_nbytes` is on the interface rather than being a diagnostic, because an
+estimator whose state grows with the recording cannot run for the length of a procedure —
+that is a property of the contract, not a nice-to-have.
