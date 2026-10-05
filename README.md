@@ -78,7 +78,7 @@ Built in tiers, each one finished before the next begins.
 ## Install
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/mahmutdemir/eeg-state-estimator.git
 cd eeg-state-estimator
 pip install -e ".[dev]"
 ```
