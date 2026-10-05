@@ -33,6 +33,13 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+# Only needed to regenerate the figures in docs/ and to run the notebooks in
+# workbooks/. Kept out of `dev` so the CI test job does not install a plotting
+# stack it never uses.
+docs = [
+    "matplotlib>=3.8",
+    "jupyter>=1.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/eeg_state_estimator"]
@@ -78,6 +85,12 @@ ignore = ["N803", "N806"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501"]
+# The workbooks are narrative, not library code. They print results for a reader
+# (T201), set sys.path before importing the package (E402), use compact
+# `a = 1; b = 2` lines to keep a cell readable as one idea (E702), and put real
+# typographic dashes in axis labels and prose, which is correct for text a human
+# reads (RUF001-003).
+"workbooks/**" = ["E501", "T201", "E402", "E702", "RUF001", "RUF002", "RUF003"]
 
 # ---------------------------------------------------------------------------
 # mypy
