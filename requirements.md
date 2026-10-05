@@ -91,6 +91,7 @@ deliberately out of scope.
 | REQ-053 | Outputs produced before the estimator has converged shall be flagged, never emitted as valid values. | Each output carries an explicit validity flag and a status. Warm-up is defined by the posterior variance still exceeding the Riccati fixed point by more than a stated tolerance — a self-calibrating criterion rather than a fixed epoch count. | n/a — behavioural |
 | REQ-054 | Retained internal state shall be constant in the length of the record. | `state_nbytes` after processing 10⁶ samples equals its value after 10³. | Exact |
 | REQ-055 | The pipeline shall compose preprocessing, spectral estimation and recursive filtering into one streaming estimator. | A single `update(chunk)` call takes raw samples and returns per-epoch state estimates with credible intervals. | n/a — behavioural |
+| REQ-056 | An epoch carrying no usable signal shall be reported as a **distinct state**, never as a value on the measurement scale. | When band power falls to the floor — a disconnected electrode, a flatline — the estimate is flagged invalid with status `no_signal`, and the filter state is not advanced by the floor value. A flat trace resembles the deepest physiological state, so reporting one as the other is the safety failure this requirement exists to prevent. | n/a — behavioural |
 
 > **Why REQ-051 and REQ-052 come out bitwise identical rather than merely within tolerance.**
 > `filter_series` and the pipeline's batch path contain no arithmetic of their own — both

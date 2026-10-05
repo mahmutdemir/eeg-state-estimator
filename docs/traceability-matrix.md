@@ -2,7 +2,7 @@
 
 Generated from `@pytest.mark.req(...)` markers in the test tree. Do not edit by hand.
 
-**29 of 29 requirements have at least one test.**
+**30 of 30 requirements have at least one test.**
 
 | Requirement | Verified by | Tests |
 |---|---|---|
@@ -15,7 +15,7 @@ Generated from `@pytest.mark.req(...)` markers in the test tree. Do not edit by 
 | REQ-014 | `spectral/test_spectral.py` | 1 |
 | REQ-015 | `spectral/test_spectral.py` | 1 |
 | REQ-016 | `spectral/test_spectral.py` | 1 |
-| REQ-017 | `spectral/test_spectral.py` | 1 |
+| REQ-017 | `spectral/test_spectral.py`, `streaming/test_pipeline.py` | 2 |
 | REQ-018 | `spectral/test_spectral.py` | 1 |
 | REQ-019 | `spectral/test_spectral.py` | 1 |
 | REQ-020 | `spectral/test_spectral.py` | 1 |
@@ -33,5 +33,6 @@ Generated from `@pytest.mark.req(...)` markers in the test tree. Do not edit by 
 | REQ-053 | `streaming/test_pipeline.py` | 1 |
 | REQ-054 | `streaming/test_pipeline.py` | 1 |
 | REQ-055 | `streaming/test_pipeline.py` | 1 |
+| REQ-056 | `streaming/test_pipeline.py` | 1 |
 | REQ-040 | `test_traceability.py` | 1 |
 | REQ-041 | `test_traceability.py` | 1 |

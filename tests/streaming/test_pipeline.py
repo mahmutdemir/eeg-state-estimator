@@ -242,3 +242,81 @@ def test_pipeline_rejects_a_non_finite_chunk() -> None:
 def test_pipeline_rejects_an_epoch_shorter_than_the_taper_design_allows() -> None:
     with pytest.raises(ValueError, match="epoch"):
         EpochPipeline(sample_rate=FS, band=(8.0, 12.0), epoch_seconds=0.02)
+
+
+# --------------------------------------------------------------------------- REQ-056
+
+
+@pytest.mark.req("REQ-056")
+def test_a_dead_channel_is_not_reported_as_a_valid_measurement() -> None:
+    """The safety case. A disconnected electrode produces a flat trace, which carries
+    almost no band power — and a low-power reading is exactly what the deepest
+    physiological state looks like. An estimator that reports the two the same way is
+    unsafe, so "no signal" must be a distinct state rather than a number on the scale.
+    """
+    live = _record(n_seconds=40.0)
+    dead = np.random.default_rng(0).normal(0.0, 1e-7, int(40.0 * FS))
+    estimates = _pipeline().update(np.concatenate([live, dead]))
+
+    during_signal = [e for e in estimates if 20.0 <= e.start_time <= 38.0]
+    after_loss = [e for e in estimates if e.start_time >= 50.0]
+    assert during_signal and after_loss
+
+    assert all(e.valid for e in during_signal), "live signal must be usable"
+    assert not any(e.valid for e in after_loss), "a dead channel must never read as valid"
+    assert all(e.status == "no_signal" for e in after_loss)
+
+
+@pytest.mark.req("REQ-056")
+def test_the_filter_state_is_not_dragged_down_by_a_dead_channel() -> None:
+    """Flagging is not enough: if the floor value is fed to the filter, the state walks to
+    it and stays there, so the estimate is wrong for many epochs after signal returns."""
+    live = _record(n_seconds=40.0)
+    dead = np.zeros(int(20.0 * FS))
+    estimates = _pipeline().update(np.concatenate([live, dead]))
+
+    last_live = [e for e in estimates if e.start_time <= 38.0][-1]
+    during_loss = [e for e in estimates if e.start_time >= 44.0]
+    assert during_loss
+    for estimate in during_loss:
+        assert estimate.state == pytest.approx(last_live.state), (
+            "state must be held, not advanced by a floor-clamped observation"
+        )
+
+
+@pytest.mark.req("REQ-056")
+def test_recovery_after_the_channel_returns() -> None:
+    live = _record(n_seconds=30.0)
+    dead = np.zeros(int(10.0 * FS))
+    estimates = _pipeline().update(np.concatenate([live, dead, _record(n_seconds=30.0, seed=5)]))
+    after_recovery = [e for e in estimates if e.start_time >= 44.0]
+    assert any(e.valid for e in after_recovery), "must resume once signal returns"
+
+
+@pytest.mark.req("REQ-001")
+def test_n_fft_shorter_than_the_record_is_rejected() -> None:
+    """A shorter transform silently truncates the signal and breaks Parseval by ~46%,
+    which would invalidate REQ-013 without raising anything."""
+    from eeg_state_estimator.spectral import MultitaperConfig, multitaper_psd
+
+    signal = white_noise(n_samples=1024, sample_rate=FS, seed=0)
+    with pytest.raises(ValueError, match="n_fft"):
+        multitaper_psd(signal, sample_rate=FS, config=MultitaperConfig(n_fft=512))
+
+
+@pytest.mark.req("REQ-017")
+def test_band_power_honours_edges_that_fall_between_bins() -> None:
+    """Selecting whole bins moves a requested edge inward, quietly narrowing the integral.
+    On a flat spectrum the answer is exactly level x width, so the error is visible."""
+    from eeg_state_estimator.spectral import Spectrum, band_power
+
+    frequencies = np.arange(0.0, 64.0 + 1e-9, 0.125)
+    spectrum = Spectrum(
+        frequencies=frequencies,
+        psd=np.full(frequencies.size, 3.0),
+        sample_rate=FS,
+        half_bandwidth=1.0,
+        n_tapers=7,
+    )
+    # 8.05 to 11.95 is 3.9 Hz wide and lands between bins at both ends.
+    assert band_power(spectrum, 8.05, 11.95) == pytest.approx(3.0 * 3.9, rel=1e-9)
