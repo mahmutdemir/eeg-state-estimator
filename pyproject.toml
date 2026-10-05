@@ -30,6 +30,12 @@ dependencies = [
     "scipy>=1.11",
 ]
 
+[project.urls]
+Homepage = "https://github.com/mahmutdemir/eeg-state-estimator"
+Repository = "https://github.com/mahmutdemir/eeg-state-estimator.git"
+Documentation = "https://github.com/mahmutdemir/eeg-state-estimator/tree/main/docs"
+Issues = "https://github.com/mahmutdemir/eeg-state-estimator/issues"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
