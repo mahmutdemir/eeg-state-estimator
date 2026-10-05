@@ -33,6 +33,10 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     markers = scan_req_markers(TEST_ROOT)
     try:
         MATRIX.parent.mkdir(parents=True, exist_ok=True)
-        MATRIX.write_text(render_matrix(requirement_ids, markers), encoding="utf-8")
+        # An explicit LF newline: the default translates to CRLF on Windows, so the file
+        # git stores (LF, per .gitattributes) and the file a Windows test run writes would
+        # differ by line ending alone. The committed matrix then reads as modified after
+        # every local run, and the CI staleness check becomes effectively Linux-only.
+        MATRIX.write_text(render_matrix(requirement_ids, markers), encoding="utf-8", newline="\n")
     except OSError as exc:
         warnings.warn(f"could not write {MATRIX.name}: {exc}", stacklevel=1)

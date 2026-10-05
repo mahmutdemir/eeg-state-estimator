@@ -22,7 +22,11 @@ classifiers = [
 # the library. Test-only and data-fetching extras are kept out of this list so an
 # install of the package itself stays small.
 dependencies = [
-    "numpy>=1.26",
+    # 2.0, not 1.26: the band integrals use np.trapezoid, which is the 2.0 rename of
+    # np.trapz. Declaring a lower floor would let a resolver install a numpy that cannot
+    # run this package, and the failure would be an AttributeError at call time rather
+    # than a clear resolution error at install time.
+    "numpy>=2.0",
     "scipy>=1.11",
 ]
 
