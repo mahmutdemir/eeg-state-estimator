@@ -29,10 +29,10 @@ are in [`workbooks/`](../workbooks) as notebooks.
 | Input contracts | REQ-001 … REQ-002 | 2 / 2 verified |
 | Spectral estimation | REQ-010 … REQ-020 | 11 / 11 verified |
 | Recursive state estimation | REQ-030 … REQ-037 | 8 / 8 verified |
-| Streaming | REQ-050 … REQ-055 | 6 / 6 verified |
+| Streaming | REQ-050 … REQ-056 | 7 / 7 verified |
 | Verification infrastructure | REQ-040 … REQ-041 | 2 / 2 verified |
 
-**132 tests, 29 of 29 requirements with at least one test.** The requirement-to-test map is
+**137 tests, 30 of 30 requirements with at least one test.** The requirement-to-test map is
 generated from the source, not maintained by hand:
 [`traceability-matrix.md`](traceability-matrix.md).
 
@@ -261,8 +261,18 @@ Stated because a verification report that lists only successes is not evidence.
   scalar case reads as `d = 1` of the general rule, but the vector filter is not implemented.
 - **Requirement coverage is complete; code coverage is not measured.** Every requirement has
   a test. That is not the same as every branch being exercised.
-- **Artifact robustness is out of scope.** Line noise, electrode pop, lead-off and clipping
-  are not handled. The lead-off case matters most: a flat trace resembles a deeply suppressed
-  one, so an estimator reporting maximum depth when it has no signal would be a safety
-  failure. The pipeline's validity flag is the right place to express "no valid signal" as a
-  distinct state rather than a value on the scale, but that work is not done.
+- **Artifact robustness is largely out of scope.** Line noise, electrode pop, muscle
+  activity and amplifier saturation are not handled; all of them produce plenty of band
+  power and none is detected.
+
+  The one case that *is* handled is signal loss, because it is the one with a safety
+  argument. A disconnected electrode gives a flat trace with almost no band power, and low
+  band power is also what the deepest physiological state looks like — so an estimator that
+  reports the two identically claims maximum depth precisely when it has no input. Such an
+  epoch is therefore reported with status `no_signal` and `valid = False`, as a **distinct
+  state rather than a value on the measurement scale** (REQ-056), and the filter is not
+  advanced by it. Feeding the floor value to the filter would walk the state down to it and
+  keep it there, turning a transient fault into a persistent one.
+
+  This was found by external review of an earlier revision, which reported `valid = True`
+  with a credible interval exactly as tight as on live signal.

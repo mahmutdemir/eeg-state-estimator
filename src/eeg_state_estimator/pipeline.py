@@ -31,9 +31,17 @@ from eeg_state_estimator.spectral import MultitaperConfig, band_power, multitape
 from eeg_state_estimator.statespace.kalman import RandomWalkModel, ScalarKalmanFilter
 from eeg_state_estimator.types import FloatArray
 
-#: Status of an estimate. `warmup` means the filter has not yet converged, so the value is
-#: present but must not be read as a settled estimate.
-EstimateStatus = Literal["warmup", "ok"]
+#: Status of an estimate.
+#:
+#: * ``ok`` -- a settled estimate from usable signal.
+#: * ``warmup`` -- the filter has not converged yet; the value is present but is not a
+#:   settled estimate.
+#: * ``no_signal`` -- the epoch carried no usable signal. This is a **distinct state, not a
+#:   value on the measurement scale**, and that distinction is the point. A disconnected
+#:   electrode produces a flat trace with almost no band power, and low band power is also
+#:   what the deepest physiological state looks like. An estimator that reports the two the
+#:   same way claims maximum depth precisely when it has no input.
+EstimateStatus = Literal["warmup", "ok", "no_signal"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,11 +185,11 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
         spectrum = multitaper_psd(epoch, sample_rate=self._sample_rate, config=self._config)
         power = band_power(spectrum, self._band[0], self._band[1])
 
-        # A silent epoch gives zero band power, whose logarithm is undefined. Clamping at a
-        # floor keeps the filter running across a dropout rather than poisoning its state
-        # with a NaN that would never wash out.
-        observed = math.log(max(power, self._power_floor))
+        index = self._epoch_index
+        if power <= self._power_floor:
+            return self._no_signal_estimate(index, power)
 
+        observed = math.log(power)
         step = self._filter.step(observed)
         lower, upper = step.credible_interval(0.95)
 
@@ -191,7 +199,6 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
         valid = self._seen_first_epoch and converged
         self._seen_first_epoch = True
 
-        index = self._epoch_index
         self._epoch_index += 1
         epoch_seconds = self._epoch_samples / self._sample_rate
 
@@ -206,4 +213,33 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
             upper=upper,
             valid=valid,
             status="ok" if valid else "warmup",
+        )
+
+    def _no_signal_estimate(self, index: int, power: float) -> EpochEstimate:
+        """Report an epoch that carried no usable signal, without advancing the filter.
+
+        Flagging alone would not be enough. If the floor value were fed to the filter as
+        an observation, the state would walk down to it and stay there, so the estimate
+        would remain wrong for many epochs after the signal came back -- a transient fault
+        would become a persistent one. Instead the filter is left untouched and its last
+        state is reported, held and clearly labelled.
+
+        Note the narrowness of what this detects: an epoch with *no* power in the band,
+        which covers a disconnected electrode or a flatline. It is not artifact detection.
+        Line noise, muscle activity, electrode pop and amplifier saturation all produce
+        plenty of band power and are not caught here.
+        """
+        self._epoch_index += 1
+        epoch_seconds = self._epoch_samples / self._sample_rate
+        return EpochEstimate(
+            epoch_index=index,
+            start_time=index * epoch_seconds,
+            end_time=(index + 1) * epoch_seconds,
+            observed=math.log(max(power, self._power_floor)),
+            state=self._filter.mean,
+            variance=self._filter.variance,
+            lower=math.nan,
+            upper=math.nan,
+            valid=False,
+            status="no_signal",
         )

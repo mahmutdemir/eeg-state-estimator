@@ -192,6 +192,17 @@ def multitaper_psd(
 
     n_tapers = config.resolved_n_tapers()
     n_fft = config.n_fft or n_samples
+    # Zero-padding (n_fft > n_samples) is fine and leaves Parseval exact, because the
+    # bin width shrinks in step. A SHORTER transform is not padding -- numpy truncates
+    # the tapered signal, discarding samples and breaking the normalisation silently:
+    # measured 46% Parseval error at n_fft = n/2. Reject it rather than return a
+    # plausible-looking spectrum that violates REQ-013.
+    if n_fft < n_samples:
+        message = (
+            f"n_fft={n_fft} is shorter than the {n_samples}-sample record, which would "
+            f"truncate it and break the PSD normalisation; use n_fft >= n_samples"
+        )
+        raise ValueError(message)
     tapers = dpss_tapers(
         n_samples=n_samples, time_bandwidth=config.time_bandwidth, n_tapers=n_tapers
     )
@@ -220,10 +231,27 @@ def band_power(spectrum: Spectrum, low: float, high: float) -> float:
     if high <= low:
         message = f"high ({high}) must exceed low ({low})"
         raise ValueError(message)
-    selected = (spectrum.frequencies >= low) & (spectrum.frequencies <= high)
-    if not np.any(selected):
+    if high < spectrum.frequencies[0] or low > spectrum.frequencies[-1]:
         return 0.0
-    return float(np.trapezoid(spectrum.psd[selected], spectrum.frequencies[selected]))
+
+    # Integrate between the exact requested edges, not between the nearest bins.
+    # Selecting whole bins moves an edge inward -- asking for [8.05, 11.95] Hz would
+    # integrate [8.125, 11.875] and quietly return a narrower band than requested.
+    # The endpoint PSD values are linearly interpolated, consistent with the
+    # trapezoidal rule used across the interior.
+    edge_low = max(low, float(spectrum.frequencies[0]))
+    edge_high = min(high, float(spectrum.frequencies[-1]))
+    interior = (spectrum.frequencies > edge_low) & (spectrum.frequencies < edge_high)
+
+    grid = np.concatenate(([edge_low], spectrum.frequencies[interior], [edge_high]))
+    values = np.concatenate(
+        (
+            [float(np.interp(edge_low, spectrum.frequencies, spectrum.psd))],
+            spectrum.psd[interior],
+            [float(np.interp(edge_high, spectrum.frequencies, spectrum.psd))],
+        )
+    )
+    return float(np.trapezoid(values, grid))
 
 
 def band_powers(

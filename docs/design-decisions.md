@@ -405,3 +405,62 @@ common supertype would lose type information at every call site in exchange for 
 nobody needs. `state_nbytes` is on the interface rather than being a diagnostic, because an
 estimator whose state grows with the recording cannot run for the length of a procedure —
 that is a property of the contract, not a nice-to-have.
+
+
+---
+
+## Post-review corrections
+
+Three defects found by an external review of the Tier 2 revision. All three are recorded
+here rather than quietly fixed, because what a review catches is more informative than what
+it does not.
+
+### "No signal" is a distinct state, not a value on the scale
+
+**Decision.** An epoch whose band power is at the floor is reported with status
+`no_signal` and `valid = False`, and the filter is **not advanced** by it.
+
+**Why.** The earlier revision clamped zero band power to a floor, took its logarithm and
+fed that to the filter like any other observation. Measured on a record where the electrode
+disconnects after 60 s, the pipeline then reported `valid = True`, status `ok`, a state
+pinned at the floor, and a credible interval of width 0.597 — **exactly as tight as on live
+signal**. A caller had no way to tell the difference between a deeply suppressed brain and
+an unplugged cable.
+
+That is the specific failure a depth estimator must not have: a flat trace resembles the
+deepest physiological state, so reporting them identically means claiming maximum depth at
+the moment there is no input.
+
+Flagging alone would not have been enough. Had the floor value still been fed to the filter,
+the state would have walked down to it and stayed, so the estimate would remain wrong for
+many epochs after the signal returned — converting a transient fault into a persistent one.
+Holding the state keeps recovery immediate.
+
+**Scope, stated precisely.** This detects an epoch with *no* power in the band — a
+disconnected electrode or a flatline. It is **not** artifact detection. Line noise, muscle
+activity, electrode pop and saturation all produce ample band power and are not caught.
+
+**Rejected.** Widening the credible interval instead. An interval, however wide, is still a
+value on the measurement scale, and the requirement is that the two cases be
+distinguishable by kind rather than by degree.
+
+### A transform shorter than the record is rejected
+
+**Decision.** `multitaper_psd` raises if `n_fft < n_samples`.
+
+**Why.** Zero-padding (`n_fft > n_samples`) is harmless and leaves Parseval exact, because
+the bin width shrinks in step. A *shorter* transform is not padding — numpy truncates the
+tapered signal and discards samples. Measured Parseval error 46% at `n_fft = n/2` and 75% at
+`n/4`, with nothing raised. The configuration accepted it and the resulting spectrum looked
+entirely plausible, which is the worst combination.
+
+### Band edges that fall between bins are interpolated
+
+**Decision.** `band_power` integrates between the exact requested edges, interpolating the
+PSD at each endpoint, rather than between the nearest enclosed bins.
+
+**Why.** Selecting whole bins moves a requested edge inward. Asking for 8.05–11.95 Hz
+integrated 8.125–11.875 Hz — 3.75 Hz instead of 3.9, a 4% shortfall that no caller asked for
+and nothing reported. The existing tests all used grids whose points landed exactly on the
+band edges, so the defect was invisible to them; the regression test now uses an off-grid
+band on a flat spectrum, where the correct answer is exactly level times width.
