@@ -57,7 +57,7 @@ def _filter_runs(
 
 @pytest.mark.req("REQ-030")
 def test_posterior_variance_is_reported_and_strictly_positive() -> None:
-    truth, observations = _simulate(n_runs=1, n_samples=500, seed=0)
+    _, observations = _simulate(n_runs=1, n_samples=500, seed=0)
     track = filter_series(observations[0], RandomWalkModel(Q_TRUE, R_TRUE))
     assert track.variance.shape == observations[0].shape
     assert np.all(track.variance > 0.0)

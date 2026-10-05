@@ -34,8 +34,12 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "hypothesis>=6.100",
-    "ruff>=0.6",
-    "mypy>=1.11",
+    # Linters are pinned exactly, test runners are not. A new ruff or mypy release adds
+    # rules and changes inference, so an unpinned linter fails CI on code nobody touched --
+    # which is how a lint gate becomes noise that people learn to ignore. These versions
+    # are the ones the suite is actually verified against; bump them deliberately.
+    "ruff==0.16.10",
+    "mypy==2.4.0",
 ]
 # Only needed to regenerate the figures in docs/ and to run the notebooks in
 # workbooks/. Kept out of `dev` so the CI test job does not install a plotting

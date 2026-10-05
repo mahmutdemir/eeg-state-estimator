@@ -109,8 +109,8 @@ from eeg_state_estimator.statespace import RandomWalkModel, filter_series
 
 # A spectral feature per epoch, from the raw trace.
 spectrum = multitaper_psd(epoch, sample_rate=128.0)
-peak = find_peak(spectrum, search_low=8.0, search_high=12.0)   # None if there is no peak
-powers = band_powers(spectrum)                                  # slow_delta, theta, alpha, beta
+peak = find_peak(spectrum, search_low=8.0, search_high=12.0)  # None if there is no peak
+powers = band_powers(spectrum)  # slow_delta, theta, alpha, beta
 
 # Track one of those features over time, with an uncertainty on every estimate.
 model = RandomWalkModel(process_variance=0.05, observation_variance=1.0)
