@@ -38,7 +38,7 @@ Generated from `@pytest.mark.req(...)` markers in the test tree. Do not edit by 
 | REQ-061 | `robustness/test_quality.py` | 1 |
 | REQ-062 | `robustness/test_quality.py` | 1 |
 | REQ-063 | `robustness/test_quality.py` | 1 |
-| REQ-064 | `robustness/test_quality.py` | 1 |
+| REQ-064 | `robustness/test_quality.py`, `streaming/test_pipeline.py` | 2 |
 | REQ-065 | `robustness/test_quality.py` | 1 |
 | REQ-066 | `robustness/test_quality.py` | 1 |
 | REQ-067 | `robustness/test_quality.py` | 1 |

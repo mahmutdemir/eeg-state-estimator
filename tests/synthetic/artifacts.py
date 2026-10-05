@@ -48,8 +48,8 @@ class Injection:
 
 
 def _span(n_samples: int, sample_rate: float, start_s: float, duration_s: float) -> slice:
-    start = int(round(start_s * sample_rate))
-    stop = min(int(round((start_s + duration_s) * sample_rate)), n_samples)
+    start = round(start_s * sample_rate)
+    stop = min(round((start_s + duration_s) * sample_rate), n_samples)
     return slice(max(start, 0), stop)
 
 
@@ -115,12 +115,12 @@ def inject_electrode_pop(
     settles. The sharp edge is what a detector keys on.
     """
     out = np.array(signal, dtype=np.float64, copy=True)
-    start = int(round(at_s * sample_rate))
+    start = round(at_s * sample_rate)
     if not 0 <= start < out.size:
         message = f"at_s={at_s} falls outside the record"
         raise ValueError(message)
 
-    length = min(int(round(decay_s * 5.0 * sample_rate)), out.size - start)
+    length = min(round(decay_s * 5.0 * sample_rate), out.size - start)
     tail = np.arange(length, dtype=np.float64) / sample_rate
     out[start : start + length] += height * np.exp(-tail / decay_s)
 

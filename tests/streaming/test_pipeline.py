@@ -232,10 +232,24 @@ def test_reset_restores_the_pipeline_to_a_fresh_state() -> None:
     assert first == again
 
 
-@pytest.mark.req("REQ-001")
-def test_pipeline_rejects_a_non_finite_chunk() -> None:
-    with pytest.raises(ValueError, match="finite"):
-        _pipeline().update(np.array([1.0, np.nan, 3.0]))
+@pytest.mark.req("REQ-064")
+def test_pipeline_absorbs_a_non_finite_chunk_instead_of_raising() -> None:
+    """Changed deliberately when REQ-064 landed.
+
+    An earlier revision raised on non-finite input. That is wrong at this layer: a monitor
+    reports lost packets as NaN, so refusing the chunk means a routine dropout crashes the
+    estimator. The numerical core stays strict -- multitaper_psd still raises -- and the
+    pipeline is the layer that absorbs real-world data, flagging the epoch rather than
+    estimating on it. See test_the_numerical_core_stays_strict_about_non_finite_input.
+    """
+    record = _record(n_seconds=20.0)
+    record[int(5.0 * FS) : int(5.5 * FS)] = np.nan
+    estimates = _pipeline().update(record)
+
+    affected = [e for e in estimates if e.start_time <= 5.0 < e.end_time]
+    assert affected
+    assert not affected[0].valid
+    assert affected[0].status == "dropped_samples"
 
 
 @pytest.mark.req("REQ-001")
@@ -264,7 +278,11 @@ def test_a_dead_channel_is_not_reported_as_a_valid_measurement() -> None:
 
     assert all(e.valid for e in during_signal), "live signal must be usable"
     assert not any(e.valid for e in after_loss), "a dead channel must never read as valid"
-    assert all(e.status == "no_signal" for e in after_loss)
+    # Since REQ-065 the amplitude detector catches this before any spectral work happens,
+    # so the status is the more specific "flatline" rather than the generic "no_signal".
+    # The band-power floor path remains live for an epoch that has amplitude but no power
+    # in the analysis band.
+    assert all(e.status == "flatline" for e in after_loss)
 
 
 @pytest.mark.req("REQ-056")

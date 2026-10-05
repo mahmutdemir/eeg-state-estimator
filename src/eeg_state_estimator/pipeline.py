@@ -27,6 +27,7 @@ from typing import Literal
 import numpy as np
 
 from eeg_state_estimator.base import StreamingEstimator
+from eeg_state_estimator.quality import QualityFlags, assess_epoch
 from eeg_state_estimator.spectral import MultitaperConfig, band_power, multitaper_psd
 from eeg_state_estimator.statespace.kalman import RandomWalkModel, ScalarKalmanFilter
 from eeg_state_estimator.types import FloatArray
@@ -41,7 +42,16 @@ from eeg_state_estimator.types import FloatArray
 #:   electrode produces a flat trace with almost no band power, and low band power is also
 #:   what the deepest physiological state looks like. An estimator that reports the two the
 #:   same way claims maximum depth precisely when it has no input.
-EstimateStatus = Literal["warmup", "ok", "no_signal"]
+EstimateStatus = Literal[
+    "warmup",
+    "ok",
+    "no_signal",
+    "dropped_samples",
+    "flatline",
+    "clipping",
+    "electrode_pop",
+    "line_noise",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +73,9 @@ class EpochEstimate:
     upper: float
     valid: bool
     status: EstimateStatus
+    #: The full quality assessment for this epoch, so a caller can inspect *why* rather
+    #: than only *whether*. Present on every estimate, including usable ones.
+    quality: QualityFlags
 
 
 class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
@@ -91,6 +104,7 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
         initial_variance: float = 1.0e6,
         warmup_tolerance: float = 0.05,
         power_floor: float = 1e-12,
+        line_frequency: float = 50.0,
     ) -> None:
         if sample_rate <= 0.0:
             message = f"sample_rate must be positive, got {sample_rate}"
@@ -118,6 +132,7 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
         self._initial_variance = initial_variance
         self._warmup_tolerance = warmup_tolerance
         self._power_floor = power_floor
+        self._line_frequency = line_frequency
 
         # The convergence target is computable in advance: the variance recursion does not
         # involve the data, so whether the filter has settled is knowable from the model
@@ -165,9 +180,11 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
         if samples.ndim != 1:
             message = f"chunk must be one-dimensional, got shape {samples.shape}"
             raise ValueError(message)
-        if not np.all(np.isfinite(samples)):
-            message = "chunk must be finite; found NaN or inf"
-            raise ValueError(message)
+        # Non-finite samples are NOT rejected here. A monitor reports lost packets as
+        # NaN, and refusing the chunk would mean a dropout crashes the estimator rather
+        # than being handled. The numerical core stays strict -- multitaper_psd still
+        # raises on non-finite input -- and this is the layer that absorbs real-world
+        # data, detecting the dropout and declining to estimate on that epoch (REQ-064).
 
         self._buffer = np.concatenate([self._buffer, samples])
 
@@ -182,12 +199,22 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
         return estimates
 
     def _process_epoch(self, epoch: FloatArray) -> EpochEstimate:
+        # Quality is assessed before anything numerical is attempted. A contaminated epoch
+        # must not reach the spectral estimator at all: a NaN would poison the transform,
+        # and an electrode pop would produce a perfectly well-formed spectrum of an
+        # artifact, which is worse because nothing would look wrong.
+        flags = assess_epoch(
+            epoch, sample_rate=self._sample_rate, line_frequency=self._line_frequency
+        )
+        if not flags.usable:
+            return self._held_estimate(self._epoch_index, flags)
+
         spectrum = multitaper_psd(epoch, sample_rate=self._sample_rate, config=self._config)
         power = band_power(spectrum, self._band[0], self._band[1])
 
         index = self._epoch_index
         if power <= self._power_floor:
-            return self._no_signal_estimate(index, power)
+            return self._no_signal_estimate(index, power, flags)
 
         observed = math.log(power)
         step = self._filter.step(observed)
@@ -213,9 +240,37 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
             upper=upper,
             valid=valid,
             status="ok" if valid else "warmup",
+            quality=flags,
         )
 
-    def _no_signal_estimate(self, index: int, power: float) -> EpochEstimate:
+    def _held_estimate(self, index: int, flags: QualityFlags) -> EpochEstimate:
+        """Report a contaminated epoch without advancing the filter (REQ-066).
+
+        Holding rather than advancing is the part that is easy to omit and expensive to
+        get wrong. An estimator that flags a fault and then feeds the contaminated
+        observation to its filter is still wrong, and stays wrong for many epochs after the
+        fault has cleared -- a transient becomes persistent. Because the state is never
+        corrupted, recovery needs no unwinding: the next usable epoch simply continues
+        (REQ-067).
+        """
+        self._epoch_index += 1
+        epoch_seconds = self._epoch_samples / self._sample_rate
+        reason = flags.reason or "no_signal"
+        return EpochEstimate(
+            epoch_index=index,
+            start_time=index * epoch_seconds,
+            end_time=(index + 1) * epoch_seconds,
+            observed=math.nan,
+            state=self._filter.mean,
+            variance=self._filter.variance,
+            lower=math.nan,
+            upper=math.nan,
+            valid=False,
+            status=reason,  # type: ignore[arg-type]
+            quality=flags,
+        )
+
+    def _no_signal_estimate(self, index: int, power: float, flags: QualityFlags) -> EpochEstimate:
         """Report an epoch that carried no usable signal, without advancing the filter.
 
         Flagging alone would not be enough. If the floor value were fed to the filter as
@@ -242,4 +297,5 @@ class EpochPipeline(StreamingEstimator[list[EpochEstimate]]):
             upper=math.nan,
             valid=False,
             status="no_signal",
+            quality=flags,
         )

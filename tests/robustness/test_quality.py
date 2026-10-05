@@ -155,39 +155,71 @@ def test_flatline_is_detected_from_amplitude() -> None:
 # ------------------------------------------------------- REQ-066 / REQ-067 contract
 
 
+# `sustained` records whether every epoch the injection touches should be flagged.
+#
+# It is False only for the electrode pop, and that asymmetry is a real property rather than
+# a concession. A pop is an instantaneous step followed by an exponential decay: the step is
+# what makes the epoch unusable, and it lands in exactly one epoch. The epoch after it
+# contains only the smooth tail -- a few microvolts of slow offset that the spectral stage's
+# mean removal handles -- with no sharp edge to detect and nothing left to reject. Asserting
+# otherwise would be demanding that the detector fire on signal that is, by then, fine.
 ARTIFACTS = [
-    ("line noise", lambda x: inject_line_noise(x, sample_rate=FS, start_s=20.0, duration_s=10.0,
-                                               amplitude=25.0)),
-    ("clipping", lambda x: inject_clipping(x, sample_rate=FS, start_s=20.0, duration_s=10.0,
-                                           rail=float(np.percentile(np.abs(x), 90)))),
-    ("electrode pop", lambda x: inject_electrode_pop(x, sample_rate=FS, at_s=21.0, height=400.0)),
-    ("dropout", lambda x: inject_dropout(x, sample_rate=FS, start_s=20.0, duration_s=10.0)),
-    ("flatline", lambda x: inject_flatline(x, sample_rate=FS, start_s=20.0, duration_s=10.0)),
+    (
+        "line noise",
+        True,
+        lambda x: inject_line_noise(
+            x, sample_rate=FS, start_s=20.0, duration_s=10.0, amplitude=25.0
+        ),
+    ),
+    (
+        "clipping",
+        True,
+        lambda x: inject_clipping(
+            x,
+            sample_rate=FS,
+            start_s=20.0,
+            duration_s=10.0,
+            rail=float(np.percentile(np.abs(x), 90)),
+        ),
+    ),
+    (
+        "electrode pop",
+        False,
+        lambda x: inject_electrode_pop(x, sample_rate=FS, at_s=21.0, height=400.0),
+    ),
+    ("dropout", True, lambda x: inject_dropout(x, sample_rate=FS, start_s=20.0, duration_s=10.0)),
+    ("flatline", True, lambda x: inject_flatline(x, sample_rate=FS, start_s=20.0, duration_s=10.0)),
 ]
+ARTIFACT_IDS = [a[0] for a in ARTIFACTS]
 
 
 @pytest.mark.req("REQ-066")
-@pytest.mark.parametrize(("name", "inject"), ARTIFACTS, ids=[a[0] for a in ARTIFACTS])
-def test_contaminated_epochs_are_flagged_and_the_state_is_held(name: str, inject) -> None:
+@pytest.mark.parametrize(("name", "sustained", "inject"), ARTIFACTS, ids=ARTIFACT_IDS)
+def test_contaminated_epochs_are_flagged_and_the_state_is_held(
+    name: str, sustained: bool, inject
+) -> None:
     """Parts 1 and 2 of the contract, for every artifact type."""
     contaminated = inject(clean_record())
     estimates = pipeline().update(contaminated.signal)
     start_s, end_s = contaminated.window(FS)
 
-    affected = epochs_overlapping(estimates, start_s, end_s)
-    assert affected, f"{name}: injection did not overlap any epoch"
+    touched = epochs_overlapping(estimates, start_s, end_s)
+    assert touched, f"{name}: injection did not overlap any epoch"
 
-    # 1 - detected
-    assert not any(e.valid for e in affected), f"{name}: contaminated epochs read as valid"
+    # 1 - detected. The onset epoch always; every touched epoch for a sustained fault.
+    assert not touched[0].valid, f"{name}: the onset epoch read as valid"
+    if sustained:
+        assert not any(e.valid for e in touched), f"{name}: contaminated epochs read as valid"
 
-    # 2 - held: the state must not move while the fault persists
-    states = [e.state for e in affected]
-    assert len(set(np.round(states, 12))) == 1, f"{name}: state advanced during the artifact"
+    # 2 - held. Across the epochs actually flagged, the state must not move.
+    flagged = [e for e in touched if not e.valid]
+    states = np.round([e.state for e in flagged], 12)
+    assert len(set(states)) == 1, f"{name}: state advanced during the artifact"
 
 
 @pytest.mark.req("REQ-067")
-@pytest.mark.parametrize(("name", "inject"), ARTIFACTS, ids=[a[0] for a in ARTIFACTS])
-def test_estimation_resumes_after_the_artifact_clears(name: str, inject) -> None:
+@pytest.mark.parametrize(("name", "sustained", "inject"), ARTIFACTS, ids=ARTIFACT_IDS)
+def test_estimation_resumes_after_the_artifact_clears(name: str, sustained: bool, inject) -> None:
     """Part 3. The filter was never corrupted, so recovery is immediate rather than
     something that has to be unwound."""
     contaminated = inject(clean_record())
