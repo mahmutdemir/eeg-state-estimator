@@ -57,9 +57,8 @@ The assistant's contribution to that module was packaging: types, the streaming-
 API, the dataclasses, and one numerical change (the covariance update form, discussed in
 `design-decisions.md`). The arithmetic is the author's.
 
-This was deliberate. It is the one module whose every line has to be defensible under
-questioning, and reading a correct derivation produces recognition rather than the ability
-to reproduce it.
+This was deliberate. Keeping the derivation and implementation aligned makes the
+filter's numerical assumptions easier to inspect and maintain.
 
 ## How verification was kept independent of generation
 
