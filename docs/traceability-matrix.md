@@ -2,12 +2,12 @@
 
 Generated from `@pytest.mark.req(...)` markers in the test tree. Do not edit by hand.
 
-**30 of 30 requirements have at least one test.**
+**38 of 38 requirements have at least one test.**
 
 | Requirement | Verified by | Tests |
 |---|---|---|
 | REQ-001 | `spectral/test_spectral.py`, `statespace/test_kalman.py`, `streaming/test_pipeline.py` | 3 |
-| REQ-002 | `spectral/test_spectral.py`, `statespace/test_kalman.py`, `streaming/test_pipeline.py`, `synthetic/test_generators.py` | 4 |
+| REQ-002 | `spectral/test_spectral.py`, `statespace/test_kalman.py`, `streaming/test_pipeline.py`, `synthetic/test_artifacts.py`, `synthetic/test_generators.py` | 5 |
 | REQ-010 | `spectral/test_spectral.py` | 1 |
 | REQ-011 | `spectral/test_spectral.py` | 1 |
 | REQ-012 | `spectral/test_spectral.py` | 1 |
@@ -34,5 +34,13 @@ Generated from `@pytest.mark.req(...)` markers in the test tree. Do not edit by 
 | REQ-054 | `streaming/test_pipeline.py` | 1 |
 | REQ-055 | `streaming/test_pipeline.py` | 1 |
 | REQ-056 | `streaming/test_pipeline.py` | 1 |
+| REQ-060 | `robustness/test_quality.py` | 1 |
+| REQ-061 | `robustness/test_quality.py` | 1 |
+| REQ-062 | `robustness/test_quality.py` | 1 |
+| REQ-063 | `robustness/test_quality.py` | 1 |
+| REQ-064 | `robustness/test_quality.py` | 1 |
+| REQ-065 | `robustness/test_quality.py` | 1 |
+| REQ-066 | `robustness/test_quality.py` | 1 |
+| REQ-067 | `robustness/test_quality.py` | 1 |
 | REQ-040 | `test_traceability.py` | 1 |
 | REQ-041 | `test_traceability.py` | 1 |

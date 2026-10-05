@@ -101,6 +101,34 @@ deliberately out of scope.
 > floating-point pipeline; meeting it exactly is a property of this design, not a guarantee
 > of the specification.
 
+## Signal quality and artifacts
+
+A recording from a live subject is not a clean signal. These requirements cover the
+contaminants that are loud enough to change a spectral estimate, and what the estimator is
+obliged to do when it meets one.
+
+Every artifact requirement is verified against a **three-part contract**: the artifact is
+*detected*, the state estimate is *held rather than advanced* while it persists, and normal
+estimation *resumes* once it clears. Detection alone is not enough — an estimator that
+flags a fault and then quietly absorbs it into its state stays wrong long after the fault
+has gone.
+
+| ID | Requirement | Acceptance criterion | Measured margin |
+|---|---|---|---|
+| REQ-060 | Each epoch shall carry a set of quality flags and a single boolean `usable` verdict. | Flags are independent and inspectable; `usable` is false if any disqualifying flag is set. A caller may branch on the verdict alone without understanding the individual detectors. | n/a — API contract |
+| REQ-061 | Mains line noise shall be detected and its power reported. | For an injected 50 Hz or 60 Hz tone at an amplitude typical of poor electrode contact, the flag is set and the reported line power rises by at least an order of magnitude over a clean epoch. | detected to **1%** of the clean epoch's alpha amplitude |
+| REQ-062 | Amplifier saturation shall be detected. | An epoch in which the signal is clipped at a rail for a configurable minimum fraction of samples is flagged. | detected at **0.5%** of samples clipped |
+| REQ-063 | Electrode pop shall be detected. | A step transient whose sample-to-sample jump exceeds a configurable multiple of the epoch's robust scale is flagged. | detected at **8×** the robust scale |
+| REQ-064 | Dropped samples shall be handled, not raised on. | Non-finite samples reaching the pipeline are detected and the epoch flagged. The numerical core remains strict — `multitaper_psd` still rejects non-finite input — and the pipeline is the layer that absorbs real-world input. | exact |
+| REQ-065 | Flatline and lead-off shall be detected from amplitude. | An epoch whose robust scale falls below a configurable threshold is flagged, independently of the band-power route in REQ-056. | exact |
+| REQ-066 | When an epoch is unusable the estimate shall be flagged **and the filter state held**, never advanced by a contaminated observation. | `valid` is false, a status naming the fault is reported, and the posterior mean is unchanged across the affected epochs. | exact |
+| REQ-067 | Normal estimation shall resume after an artifact clears. | Within **1 epoch** of the last contaminated epoch, `usable` returns true and the estimate advances again. | exact — the filter is never corrupted, so there is nothing to unwind |
+
+> **What this does not claim.** These are detectors for contaminants that are *loud*. A
+> low-amplitude artifact that resembles EEG — a slow drift inside the analysis band, or
+> muscle activity at a level comparable to the signal — is not detected, and nothing here
+> should be read as a general artifact-rejection capability.
+
 ## Verification infrastructure
 
 | ID | Requirement | Acceptance criterion | Measured margin |
