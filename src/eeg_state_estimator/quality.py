@@ -179,15 +179,23 @@ def assess_epoch(
 
     flatline = bool(scale < flatline_scale)
 
-    # Saturation: samples resting at the extreme magnitude. Compared against the maximum
-    # rather than a fixed rail because the rail is a property of the amplifier, which this
-    # function does not know.
+    # Saturation: many samples resting at exactly one value. That repetition is the actual
+    # signature of a rail -- a continuous signal does not revisit a single value hundreds of
+    # times -- and the rail itself is a property of the amplifier, which this function does
+    # not know.
+    #
+    # An earlier version compared each sample to the epoch's own maximum. That works for a
+    # fully clipped epoch and fails for a partially clipped one: if the unclipped half
+    # happens to reach higher than the rail, the maximum is an ordinary sample and nothing
+    # is found. Counting the most-repeated large-amplitude value has no such blind spot,
+    # because the rail is defined by how often it recurs rather than by how large it is.
     clipping = False
     if finite.size and not flatline:
-        extreme = float(np.max(np.abs(finite)))
-        if extreme > 0.0:
-            at_rail = np.isclose(np.abs(finite), extreme, rtol=1e-9, atol=1e-12)
-            clipping = bool(at_rail.mean() >= clipping_fraction and at_rail.sum() >= 3)
+        large = np.abs(finite) >= np.percentile(np.abs(finite), 75)
+        if np.any(large):
+            _, counts = np.unique(finite[large], return_counts=True)
+            repeated = int(counts.max())
+            clipping = bool(repeated / finite.size >= clipping_fraction and repeated >= 3)
 
     # Electrode pop: a single-sample jump far outside what the epoch's own scale allows.
     electrode_pop = False

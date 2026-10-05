@@ -111,3 +111,12 @@ def test_injections_are_reproducible(clean: np.ndarray) -> None:
         inject_flatline(clean, seed=7, **kwargs).signal,
         inject_flatline(clean, seed=7, **kwargs).signal,
     )
+
+
+def test_clipping_refuses_a_non_finite_rail(clean: np.ndarray) -> None:
+    """Regression. A caller computing the rail with np.percentile over a record that
+    already contains a dropout gets NaN back, and np.clip would then fill the window with
+    NaN -- injecting a dropout while claiming to inject clipping. This was caught only by
+    looking at a figure and noticing the status said `dropped_samples`."""
+    with pytest.raises(ValueError, match="rail"):
+        inject_clipping(clean, sample_rate=FS, start_s=5.0, duration_s=2.0, rail=float("nan"))

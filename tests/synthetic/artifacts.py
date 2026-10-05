@@ -89,6 +89,15 @@ def inject_clipping(
     Only the samples actually driven to the rail are marked affected: clipping a window
     whose signal never reaches the rail would change nothing, and the mask should say so.
     """
+    # A non-finite rail turns np.clip into a NaN fill, which would silently inject a
+    # *dropout* while claiming to inject clipping. That happens easily: a caller computing
+    # the rail with np.percentile over a record that already contains NaN gets NaN back.
+    # Fail loudly instead -- a harness that mislabels its own artifact is worse than useless,
+    # because every detector scored against it is scored against the wrong ground truth.
+    if not np.isfinite(rail) or rail <= 0.0:
+        message = f"rail must be finite and positive, got {rail}"
+        raise ValueError(message)
+
     out = np.array(signal, dtype=np.float64, copy=True)
     where = _span(out.size, sample_rate, start_s, duration_s)
     segment = out[where]

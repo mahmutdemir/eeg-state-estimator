@@ -30,9 +30,10 @@ are in [`workbooks/`](../workbooks) as notebooks.
 | Spectral estimation | REQ-010 … REQ-020 | 11 / 11 verified |
 | Recursive state estimation | REQ-030 … REQ-037 | 8 / 8 verified |
 | Streaming | REQ-050 … REQ-056 | 7 / 7 verified |
+| Signal quality and artifacts | REQ-060 … REQ-067 | 8 / 8 verified |
 | Verification infrastructure | REQ-040 … REQ-041 | 2 / 2 verified |
 
-**137 tests, 30 of 30 requirements with at least one test.** The requirement-to-test map is
+**167 tests, 38 of 38 requirements with at least one test.** The requirement-to-test map is
 generated from the source, not maintained by hand:
 [`traceability-matrix.md`](traceability-matrix.md).
 
@@ -239,6 +240,87 @@ monotonically to its fixed point.
 
 ---
 
+## 4. Signal quality and artifacts
+
+**Expectation.** Detect the contaminants that are loud enough to change a spectral estimate,
+and satisfy a three-part contract for each: *detected*, *held*, *recovered*
+(REQ-060 … REQ-067).
+
+![Artifact gallery](figures/fig07_artifact_gallery.png)
+
+Five detectors, each firing on its own fault and on nothing else. A clean epoch raises no
+flag — the control that matters most, since a detector that fires on good signal is
+worthless however well it performs on bad.
+
+### Detection is a third of the job
+
+The part that is easy to skip is **holding the state**. An estimator that flags a fault and
+then feeds the contaminated observation to its filter is still wrong, and stays wrong after
+the fault has gone. Measured on a 10-second flatline, with the same filter and the same
+data, gated against ungated:
+
+| | worst excursion | time to return to baseline after the fault clears |
+|---|---|---|
+| state held (gated) | **0.07** | **0.0 s** |
+| artifact absorbed | 11.30 | **14.0 s** |
+
+The fault lasts 10 seconds; the ungated estimate is wrong for 24. That is the filter doing
+its job — its gain is a precision-weighted compromise, so it absorbs the bad observations
+gradually and must be dragged back just as gradually. **The cost of absorbing an artifact is
+its duration plus the filter's settling time**, and the settling time is by design much
+longer than one epoch.
+
+Because the gated path never offers the observation to the filter, there is nothing to
+unwind and recovery is immediate.
+
+![Three-part contract](figures/fig08_three_part_contract.png)
+
+Four faults on one record. Each flagged run is perfectly horizontal — that is not the filter
+smoothing through the fault, it is the filter not being asked. Drift across the whole record
+is **0.018** in log power, so four faults cost nothing cumulatively.
+
+### Thresholds are in robust units, and that decides whether the detector works
+
+Every amplitude threshold is scaled by the median absolute deviation, not the standard
+deviation. This is not a stylistic preference. Measured on an epoch whose own amplitude is
+about 6 µV:
+
+| epoch | std | robust (MAD) | max jump | jump/std | jump/MAD |
+|---|---|---|---|---|---|
+| clean | 4.67 | 5.89 | 5.3 | 1.13 | 0.89 |
+| + 300 µV pop | 67.27 | 16.02 | 302.1 | **4.49** | 18.85 |
+| + 900 µV pop | 199.87 | 27.62 | 902.1 | **4.51** | 32.66 |
+
+Tripling the artifact leaves `jump/std` unchanged, because the standard deviation of an
+epoch containing a pop is dominated by the pop: **the statistic used to find the artifact is
+corrupted by the artifact.** A detector set at 8 standard deviations would miss a 900 µV
+excursion entirely. MAD has a 50% breakdown point, so `jump/MAD` scales as a yardstick
+should and the same threshold catches both.
+
+### What is not detected
+
+Specifically, because a vague limitation is not a limitation. Three contaminants at roughly
+signal amplitude, all of which pass as usable:
+
+| contaminant | detected | effect on measured alpha power |
+|---|---|---|
+| slow drift, 0.3 Hz 8 µV | no | 1.01× |
+| muscle-band noise, 6 µV | no | 1.20× |
+| tone inside the band, 5 µV | no | **1.48×** |
+
+The third changes the measurement by half and is reported as a confident estimate with a
+normal credible interval. This is not fixable by lowering thresholds: at that amplitude the
+contaminant and the signal are the same thing as far as a single-channel amplitude or
+spectral test is concerned. Separating them needs information this estimator does not have —
+a second channel, a reference, or a model of the contaminant.
+
+So the claim stays narrow and checkable: **these five loud faults are caught, and the
+estimator refuses to produce a confident number while one is present.**
+
+Derivation in [`workbooks/04_artifact_robustness.ipynb`](../workbooks/04_artifact_robustness.ipynb).
+
+---
+
 ## Limitations
 
 Stated because a verification report that lists only successes is not evidence.
@@ -261,18 +343,18 @@ Stated because a verification report that lists only successes is not evidence.
   scalar case reads as `d = 1` of the general rule, but the vector filter is not implemented.
 - **Requirement coverage is complete; code coverage is not measured.** Every requirement has
   a test. That is not the same as every branch being exercised.
-- **Artifact robustness is largely out of scope.** Line noise, electrode pop, muscle
-  activity and amplifier saturation are not handled; all of them produce plenty of band
-  power and none is detected.
+- **Artifact handling is narrow by design.** Five loud faults are caught (section 4). A
+  contaminant at roughly signal amplitude — slow drift, muscle activity, a tone inside the
+  analysis band — is not detected and is absorbed silently. Mains frequency is configuration
+  rather than detection, because a two-second epoch does not reliably distinguish 50 from
+  60 Hz.
 
-  The one case that *is* handled is signal loss, because it is the one with a safety
-  argument. A disconnected electrode gives a flat trace with almost no band power, and low
-  band power is also what the deepest physiological state looks like — so an estimator that
-  reports the two identically claims maximum depth precisely when it has no input. Such an
-  epoch is therefore reported with status `no_signal` and `valid = False`, as a **distinct
-  state rather than a value on the measurement scale** (REQ-056), and the filter is not
-  advanced by it. Feeding the floor value to the filter would walk the state down to it and
-  keep it there, turning a transient fault into a persistent one.
+  The fault with a safety argument behind it is signal loss. A disconnected electrode gives
+  a flat trace with almost no band power, and low band power is also what the deepest
+  physiological state looks like — so an estimator that reports the two identically claims
+  maximum depth precisely when it has no input. Such an epoch is reported as a **distinct
+  state rather than a value on the measurement scale** (REQ-056, REQ-065), and the filter is
+  not advanced by it.
 
-  This was found by external review of an earlier revision, which reported `valid = True`
-  with a credible interval exactly as tight as on live signal.
+  An earlier revision got this wrong, reporting `valid = True` with a credible interval
+  exactly as tight as on live signal. It was found by external review, not by the suite.

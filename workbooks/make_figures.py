@@ -38,6 +38,7 @@ from style import (
 )
 
 from eeg_state_estimator.pipeline import EpochPipeline
+from eeg_state_estimator.quality import assess_epoch
 from eeg_state_estimator.spectral import (
     MultitaperConfig,
     find_peak,
@@ -49,6 +50,13 @@ from eeg_state_estimator.statespace.diagnostics import (
     chi_square_consistency_bounds,
     credible_interval_coverage,
     nees_across_runs,
+)
+from synthetic.artifacts import (
+    inject_clipping,
+    inject_dropout,
+    inject_electrode_pop,
+    inject_flatline,
+    inject_line_noise,
 )
 from synthetic.generators import power_law_noise, sinusoid, white_noise
 
@@ -502,6 +510,153 @@ def figure_pipeline() -> None:
     save(fig, "fig06_pipeline.png")
 
 
+def _clean(seconds: float = 60.0, seed: int = 0) -> np.ndarray:
+    n = int(seconds * FS)
+    background = power_law_noise(n_samples=n, sample_rate=FS, exponent=1.5, variance=4.0, seed=seed)
+    return np.asarray(
+        background + sinusoid(n_samples=n, sample_rate=FS, frequency=10.0, amplitude=6.0),
+        dtype=np.float64,
+    )
+
+
+# ----------------------------------------------------------------------- figure 7
+def figure_artifact_gallery() -> None:
+    """What each artifact looks like, and what the detector keys on."""
+    epoch_n = int(2 * FS)
+    base = _clean(seconds=2.0)[:epoch_n]
+    times = np.arange(epoch_n) / FS
+
+    cases = [
+        ("clean", base, "usable"),
+        (
+            "line noise",
+            inject_line_noise(
+                base, sample_rate=FS, start_s=0.0, duration_s=2.0, amplitude=20.0
+            ).signal,
+            "line_noise",
+        ),
+        (
+            "clipping",
+            inject_clipping(
+                base,
+                sample_rate=FS,
+                start_s=0.0,
+                duration_s=2.0,
+                rail=float(np.percentile(np.abs(base), 97)),
+            ).signal,
+            "clipping",
+        ),
+        (
+            "electrode pop",
+            inject_electrode_pop(base, sample_rate=FS, at_s=1.0, height=300.0).signal,
+            "electrode_pop",
+        ),
+        (
+            "dropout",
+            inject_dropout(base, sample_rate=FS, start_s=0.8, duration_s=0.3).signal,
+            "dropped_samples",
+        ),
+        (
+            "flatline",
+            inject_flatline(base, sample_rate=FS, start_s=0.0, duration_s=2.0).signal,
+            "flatline",
+        ),
+    ]
+
+    fig, axes = plt.subplots(2, 3, figsize=(12.5, 5.0), constrained_layout=True)
+    for ax, (name, signal, expected) in zip(axes.ravel(), cases, strict=True):
+        flags = assess_epoch(signal, sample_rate=FS)
+        detected = flags.reason or "usable"
+        ok = detected == expected
+        ax.plot(times, signal, color=ESTIMATE if flags.usable else BAD, lw=0.7)
+        ax.set_title(name, loc="left")
+        ax.set_xlabel("time (s)")
+        ax.set_ylabel("µV")
+        annotate(
+            ax,
+            f"usable: {flags.usable}\nreason: {detected}" + ("" if ok else "  MISMATCH"),
+            loc="upper right",
+        )
+    fig.suptitle("Each artifact, and the flag the detector raises", y=1.02, fontsize=11)
+    save(fig, "fig07_artifact_gallery.png")
+
+
+# ----------------------------------------------------------------------- figure 8
+def figure_three_part_contract() -> None:
+    """Detected, held, recovered - on one record carrying four faults in sequence."""
+    record = _clean(seconds=160.0)
+    # Computed once from the pristine record. The injections are applied in sequence, so
+    # taking the rail from the running `record` would read a percentile over data that
+    # already contains the dropout's NaNs -- np.percentile returns NaN, np.clip then fills
+    # the window with NaN, and the figure would show a second dropout labelled "clipping".
+    rail = float(np.percentile(np.abs(record), 90))
+    spans = []
+    for start, (label, inject) in zip(
+        (20.0, 55.0, 90.0, 125.0),
+        [
+            (
+                "line noise",
+                lambda x, t: inject_line_noise(
+                    x, sample_rate=FS, start_s=t, duration_s=10.0, amplitude=25.0
+                ),
+            ),
+            ("dropout", lambda x, t: inject_dropout(x, sample_rate=FS, start_s=t, duration_s=10.0)),
+            (
+                "flatline",
+                lambda x, t: inject_flatline(x, sample_rate=FS, start_s=t, duration_s=10.0),
+            ),
+            (
+                "clipping",
+                lambda x, t: inject_clipping(
+                    x,
+                    sample_rate=FS,
+                    start_s=t,
+                    duration_s=10.0,
+                    rail=rail,
+                ),
+            ),
+        ],
+        strict=True,
+    ):
+        result = inject(record, start)
+        record = result.signal
+        spans.append((label, start, start + 10.0))
+
+    pipeline = EpochPipeline(
+        sample_rate=FS, band=(8.0, 12.0), epoch_seconds=2.0, model=RandomWalkModel(0.02, 0.05)
+    )
+    estimates = pipeline.update(record)
+    start_t = np.array([e.start_time for e in estimates])
+    state = np.array([e.state for e in estimates])
+    valid = np.array([e.valid for e in estimates])
+
+    fig, ax = plt.subplots(figsize=(12.0, 3.8), constrained_layout=True)
+    for label, lo, hi in spans:
+        ax.axvspan(lo, hi, color=BAD, alpha=0.10)
+        # Axes-fraction y, so the label sits just below the top spine whatever the data
+        # range is. In data coordinates it expands the y-axis and collapses the plot.
+        ax.text(
+            (lo + hi) / 2,
+            0.97,
+            label,
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="top",
+            fontsize=8,
+            color=INK_SECONDARY,
+        )
+    ax.plot(start_t[valid], state[valid], ".", color=ESTIMATE, ms=7, label="valid estimate")
+    ax.plot(start_t[~valid], state[~valid], "x", color=BAD, ms=7, label="flagged, state held")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("log alpha power")
+    ax.set_title("Detected, held, recovered - four faults, no drift", loc="left")
+    ax.legend(loc="lower right", ncol=2)
+    annotate(
+        ax, f"{int((~valid).sum())} epochs flagged, {int(valid.sum())} usable", loc="lower left"
+    )
+    save(fig, "fig08_three_part_contract.png")
+
+
 def main() -> None:
     use_report_style()
     for name, build in [
@@ -511,6 +666,8 @@ def main() -> None:
         ("fig04 consistency", figure_consistency),
         ("fig05 NEES aggregation", figure_nees_aggregation),
         ("fig06 pipeline", figure_pipeline),
+        ("fig07 artifact gallery", figure_artifact_gallery),
+        ("fig08 three-part contract", figure_three_part_contract),
     ]:
         print(f"building {name} ...", flush=True)
         build()

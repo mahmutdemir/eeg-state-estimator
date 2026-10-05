@@ -68,9 +68,9 @@ Built in tiers, each one finished before the next begins.
 - [x] **Tier 0** — scaffold, requirements, traceability generator, CI
 - [x] **Tier 1** — synthetic generators, multitaper spectral core, scalar Kalman filter with the consistency battery, documentation
 
-**132 tests, 29 of 29 requirements verified**, ruff and mypy clean.
+**167 tests, 38 of 38 requirements verified**, ruff and mypy clean.
 - [x] **Tier 2** — streaming interface, online/offline equivalence, strict causality
-- [ ] **Tier 3** — one of: artifact robustness, burst suppression, public-data demonstration
+- [x] **Tier 3** — artifact robustness: five detectors and a three-part contract
 
 ---
 
@@ -131,6 +131,7 @@ confidence is justified.
 src/eeg_state_estimator/
     types.py            shared array type aliases
     spectral.py         multitaper PSD on DPSS tapers, band powers, spectral edge
+    quality.py          per-epoch artifact detection and the usable verdict
     statespace/
         kalman.py       scalar Kalman filter, random-walk process model
         diagnostics.py  NEES, NIS, Ljung-Box, interval coverage
@@ -150,6 +151,7 @@ workbooks/
     01_spectral_estimation.ipynb
     02_filter_consistency.ipynb
     03_streaming_behaviour.ipynb
+    04_artifact_robustness.ipynb
     make_figures.py          regenerates every figure in the report
     style.py                 shared plotting style
 ```

@@ -464,3 +464,91 @@ integrated 8.125–11.875 Hz — 3.75 Hz instead of 3.9, a 4% shortfall that no 
 and nothing reported. The existing tests all used grids whose points landed exactly on the
 band edges, so the defect was invisible to them; the regression test now uses an off-grid
 band on a flat spectrum, where the correct answer is exactly level times width.
+
+---
+
+## Tier 3 — signal quality
+
+### Detection is a third of the contract; holding the state is the rest
+
+**Decision.** A contaminated epoch is flagged **and the filter is not advanced by it**. The
+last good state is reported, held.
+
+**Why.** Measured on a 10-second flatline, with the same filter and the same data:
+
+| | worst excursion | time to return to baseline |
+|---|---|---|
+| state held | 0.07 | 0.0 s |
+| artifact absorbed | 11.30 | 14.0 s |
+
+The fault lasts 10 seconds and the ungated estimate is wrong for 24. That is not the filter
+misbehaving — it is the filter working as designed. Its gain is a precision-weighted
+compromise, so it absorbs the contaminated observations gradually and then must be dragged
+back just as gradually by subsequent good ones. **The cost of absorbing an artifact is its
+duration plus the filter's settling time**, and the settling time is by construction far
+longer than one epoch. A one-epoch glitch can buy half a minute of wrong estimate.
+
+Holding costs nothing to implement and removes the second term entirely: there is no
+corruption to unwind, so the next usable epoch simply continues.
+
+**Rejected.** Flagging only, and letting the caller decide. That pushes a subtle,
+easy-to-get-wrong decision onto every consumer, and the consumer has less information than
+the estimator does.
+
+### Amplitude thresholds are in robust units
+
+**Decision.** Every amplitude threshold is scaled by the median absolute deviation.
+
+**Why.** Measured on an epoch whose own amplitude is about 6 µV:
+
+| epoch | std | MAD | max jump | jump/std | jump/MAD |
+|---|---|---|---|---|---|
+| clean | 4.67 | 5.89 | 5.3 | 1.13 | 0.89 |
+| + 300 µV pop | 67.27 | 16.02 | 302.1 | **4.49** | 18.85 |
+| + 900 µV pop | 199.87 | 27.62 | 902.1 | **4.51** | 32.66 |
+
+Tripling the artifact leaves `jump/std` essentially unchanged. The standard deviation of an
+epoch containing a pop is dominated by the pop, so **the statistic being used to find the
+artifact is corrupted by the artifact** — and it gets worse as the fault gets worse. A
+detector set at 8 standard deviations would miss a 900 µV excursion outright. MAD has a 50%
+breakdown point, so `jump/MAD` scales with the artifact as a yardstick should.
+
+### Clipping is detected by repetition, not by magnitude
+
+**Decision.** Count the most-repeated value among large-amplitude samples, rather than
+counting samples that sit at the epoch's maximum.
+
+**Why.** The first implementation compared each sample to `max(|x|)` within the epoch. That
+works for a fully clipped epoch and fails for a partially clipped one: if the unclipped part
+happens to reach higher than the rail, the maximum is an ordinary sample and nothing is
+found. It was caught by a boundary epoch in the four-fault figure reporting `ok`.
+
+Repetition has no such blind spot. A continuous signal does not revisit a single value
+hundreds of times; a rail does, by definition. Defining the rail by **how often it recurs**
+rather than by how large it is removes the dependence on what else is in the epoch.
+
+### Line power is a projection, not a spectrum
+
+**Decision.** Mains power is measured by projecting the epoch onto a sine and cosine at the
+line frequency.
+
+**Why.** It is a single inner product. Running a full multitaper estimate to answer one
+narrow question would couple quality assessment to the spectral configuration — change `NW`
+for a signal-processing reason and the quality thresholds would silently move — and would
+introduce an estimator with its own bias and variance to defend. The projection has neither.
+
+The mains frequency is a **parameter, not a detection**. A two-second epoch does not
+reliably distinguish 50 from 60 Hz, and guessing would be worse than being told.
+
+### The injection harness fails loudly on a non-finite rail
+
+**Decision.** `inject_clipping` raises if the rail is not finite and positive.
+
+**Why.** A caller computing the rail with `np.percentile` over a record that already
+contains a dropout gets `NaN` back; `np.clip` then fills the window with `NaN`, injecting a
+*dropout* while labelling it *clipping*. That happened in this repository, and the resulting
+figure was reviewed and approved before the mislabelling was noticed — the panel was correct
+in every respect except which artifact it showed.
+
+A harness that mislabels its own artifact is worse than useless, because every detector
+scored against it is scored against the wrong ground truth.
